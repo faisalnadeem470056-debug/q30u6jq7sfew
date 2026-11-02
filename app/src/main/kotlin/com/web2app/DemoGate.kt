@@ -43,8 +43,21 @@ object DemoGate {
         return first != SESSION
     }
 
-    /** Sends an expired launch to the "demo ended" screen. Returns true if it did. */
-    fun block(activity: Activity): Boolean {
+    /**
+     * Sends an expired launch to the "demo ended" screen. Returns true if it did.
+     *
+     * [restoring] is true when Android is bringing back a screen it killed in the
+     * background (savedInstanceState != null). That is still the first run, so the
+     * new process takes the run over instead of being treated as a second launch.
+     */
+    fun block(activity: Activity, restoring: Boolean = false): Boolean {
+        if (restoring) {
+            val prefs = activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            if (prefs.getString(KEY_SESSION, null) != null) {
+                prefs.edit().putString(KEY_SESSION, SESSION).commit()
+                return false
+            }
+        }
         if (!expired(activity)) return false
         activity.startActivity(Intent(activity, DemoExpiredActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
         activity.finish()

@@ -58,7 +58,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // DEMO BUILD: one run only (see DemoGate). The builder's live preview passes an app id and is never gated.
-        if (intent.getStringExtra(MainActivity.EXTRA_APP_ID) == null && DemoGate.block(this)) return
+        if (intent.getStringExtra(MainActivity.EXTRA_APP_ID) == null && DemoGate.block(this, savedInstanceState != null)) return
 
         // Preview mode: load the app being previewed from the builder's storage.
         // Falls back to the bundled assets/app_settings.json when launched standalone.
