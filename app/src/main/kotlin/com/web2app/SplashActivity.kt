@@ -111,7 +111,8 @@ class SplashActivity : AppCompatActivity() {
         (loaderHolder.layoutParams as? ViewGroup.MarginLayoutParams)?.topMargin =
             dp(splash.gap.coerceIn(0, 120))
         loaderHolder.removeAllViews()
-        val themeColor = safeColor(config?.themeColor, DEFAULT_THEME)
+        // Loaders never take a near-white theme colour (they would vanish on a light splash).
+        val themeColor = PageLoaderViews.visibleColor(safeColor(config?.themeColor, DEFAULT_THEME))
         val sizePx = dp(splash.size.coerceIn(16, 120))
         val loader = makeLoader(splash.loader, sizePx, themeColor)
         if (loader != null) loaderHolder.addView(loader)

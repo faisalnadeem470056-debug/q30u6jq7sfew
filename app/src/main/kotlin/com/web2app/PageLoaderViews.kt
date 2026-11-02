@@ -53,12 +53,26 @@ object PageLoaderViews {
         icon: Bitmap?,
         themeColor: Int,
         opts: Opts = Opts()
-    ): View = when (style) {
-        LINEAR -> linear(context, themeColor)
-        BRAND_RING -> wrap(context, brandRing(context, icon, themeColor, opts), opts)
-        BRAND_BAR -> wrap(context, brandBar(context, icon, themeColor, opts), opts)
-        else -> circular(context, themeColor)
+    ): View {
+        val tint = visibleColor(themeColor)
+        return when (style) {
+            LINEAR -> linear(context, tint)
+            BRAND_RING -> wrap(context, brandRing(context, icon, tint, opts), opts)
+            BRAND_BAR -> wrap(context, brandBar(context, icon, tint, opts), opts)
+            else -> circular(context, tint)
+        }
     }
+
+    /**
+     * The colour loaders are drawn in: the theme colour, unless it is so close to
+     * white that a loader on a light screen would disappear — then the default theme.
+     */
+    fun visibleColor(color: Int): Int {
+        val luma = (0.299 * Color.red(color) + 0.587 * Color.green(color) + 0.114 * Color.blue(color)) / 255.0
+        return if (luma > 0.9) FALLBACK_TINT else color
+    }
+
+    private const val FALLBACK_TINT = 0xFF5B5BD6.toInt()
 
     // ─── Free loaders ────────────────────────────────────────────────────────
 
