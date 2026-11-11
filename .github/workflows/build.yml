@@ -56,11 +56,21 @@ jobs:
       - name: Load project signing key
         id: signing
         if: (steps.target.outputs.value == 'apk' || steps.target.outputs.value == 'aab') && startsWith(github.ref_name, 'app-')
+        env:
+          SEAL_KEY: ${{ secrets.SEAL_KEY }}
         run: |
+          # The repo is public, so the builder pushes the key sealed with SEAL_KEY.
+          if [ -f keystore.jks.enc ] && [ -f keystore-credentials.txt.enc ]; then
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -md sha256 -pass env:SEAL_KEY -in keystore.jks.enc -out keystore.jks
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -md sha256 -pass env:SEAL_KEY -in keystore-credentials.txt.enc -out keystore-credentials.txt
+          fi
           if [ -f keystore.jks ] && [ -f keystore-credentials.txt ]; then
-            ALIAS=$(grep -i '^Key alias' keystore-credentials.txt | sed 's/.*: *//' | tr -d '[:space:]')
-            STOREPASS=$(grep -i '^Store password' keystore-credentials.txt | sed 's/.*: *//' | tr -d '[:space:]')
-            KEYPASS=$(grep -i '^Key password' keystore-credentials.txt | sed 's/.*: *//' | tr -d '[:space:]')
+            field() { grep -i "^$1" keystore-credentials.txt | head -1 | sed 's/^[^:]*: *//; s/[[:space:]]*$//'; }
+            ALIAS=$(field 'Key alias')
+            STOREPASS=$(field 'Store password')
+            KEYPASS=$(field 'Key password')
+            echo "::add-mask::$STOREPASS"
+            echo "::add-mask::$KEYPASS"
             {
               echo "SIGN_STORE_FILE=$PWD/keystore.jks"
               echo "SIGN_STORE_PASSWORD=$STOREPASS"
@@ -96,11 +106,14 @@ jobs:
       # plain-text file describing them, so the user can download both.
       - name: Generate keystore
         if: steps.target.outputs.value == 'key'
+        env:
+          SEAL_KEY: ${{ secrets.SEAL_KEY }}
         run: |
           APPNAME=$(jq -r '.appName // "WebToApp"' app/src/main/assets/app_settings.json 2>/dev/null || echo WebToApp)
           ALIAS=upload
           STOREPASS=$(openssl rand -hex 12)
           KEYPASS=$STOREPASS
+          echo "::add-mask::$STOREPASS"
           keytool -genkeypair -v \
             -keystore keystore.jks \
             -alias "$ALIAS" \
@@ -119,6 +132,10 @@ jobs:
             echo "Keep this file safe - you need this exact keystore and these"
             echo "passwords to publish updates of your app on Google Play."
           } > keystore-credentials.txt
+          # Published sealed: the repo is public. The builder opens them on download.
+          openssl enc -aes-256-cbc -pbkdf2 -iter 100000 -md sha256 -pass env:SEAL_KEY -in keystore.jks -out keystore.jks.enc
+          openssl enc -aes-256-cbc -pbkdf2 -iter 100000 -md sha256 -pass env:SEAL_KEY -in keystore-credentials.txt -out keystore-credentials.txt.enc
+          rm -f keystore.jks keystore-credentials.txt
 
       # Keep the APK as a CI artifact for non-builder builds (main / PRs).
       - name: Upload APK artifact
@@ -146,34 +163,12 @@ jobs:
         if: startsWith(github.ref_name, 'app-') && steps.branch_check.outputs.exists == 'true'
         run: |
           mkdir -p dist
-          # When an APK/AAB was signed with the shared DEFAULT key (the builder didn't
-          # push the user's own key), publish that keystore + its credentials so the user
-          # holds the exact key their app is signed with. No-op when the user's key was used.
-          emit_default_key() {
-            if [ "${{ steps.signing.outputs.signed }}" != "true" ] && [ -f app/signing/web2app-release.keystore ]; then
-              cp app/signing/web2app-release.keystore dist/keystore.jks
-              APPNAME=$(jq -r '.appName // "WebToApp"' app/src/main/assets/app_settings.json 2>/dev/null || echo WebToApp)
-              {
-                echo "Keystore credentials for $APPNAME"
-                echo "===================================="
-                echo "Keystore file : keystore.jks"
-                echo "Key alias     : webtoapppro"
-                echo "Store password: web2apppro"
-                echo "Key password  : web2apppro"
-                echo ""
-                echo "This is the shared default signing key your app was signed with."
-                echo "Keep this file safe - you need this exact keystore and these"
-                echo "passwords to publish updates of your app on Google Play."
-              } > dist/keystore-credentials.txt
-            fi
-          }
+          # The shared default key (demo builds only) is never published.
           case "${{ steps.target.outputs.value }}" in
             apk) cp app/build/outputs/apk/release/app-release.apk dist/
-                 [ -f signing-info.txt ] && cp signing-info.txt dist/ || true
-                 emit_default_key ;;
-            aab) cp app/build/outputs/bundle/release/app-release.aab dist/
-                 emit_default_key ;;
-            key) cp keystore.jks keystore-credentials.txt dist/ ;;
+                 [ -f signing-info.txt ] && cp signing-info.txt dist/ || true ;;
+            aab) cp app/build/outputs/bundle/release/app-release.aab dist/ ;;
+            key) cp keystore.jks.enc keystore-credentials.txt.enc dist/ ;;
           esac
           ls -la dist
 
